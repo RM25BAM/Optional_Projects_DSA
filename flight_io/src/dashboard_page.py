@@ -3,7 +3,7 @@ from PIL import Image
 import os
 from binary_search import binary_search_flights
 from flights_info import flights
-
+from utils import navigate_to
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 ASSETS_DIR = os.path.join(BASE_DIR, "flight_io/assets")
 destinations = [
@@ -36,12 +36,10 @@ def search_flights():
         origin = origin.strip().title()
         destination = destination.strip().title()
         sorted_flights = sorted(flights, key=lambda x: (x["origin"], x["destination"], x["price"], x["date"], x["departure"]))
-        results = binary_search_flights(sorted_flights, origin, destination)
-
-        if results:
+        results, indexs = binary_search_flights(sorted_flights, origin, destination)
+        if results and indexs:
             st.subheader("Direct Flights Found:")
-
-            for flight in results:
+            for flight, index in zip(results, indexs):
                 with st.container():
                     st.markdown(
                         """
@@ -73,55 +71,32 @@ def search_flights():
                             color: #d3d3d3; /* Light gray text */
                             font-size: 14px;
                         }
-                        .select-button {
-                            margin-top: 10px;
-                            padding: 8px 12px;
-                            background-color: #4CAF50;
-                            border: none;
-                            color: white;
-                            border-radius: 5px;
-                            cursor: pointer;
-                            font-size: 14px;
-                        }
                         </style>
                         """,
                         unsafe_allow_html=True,
                     )
-
-
-                    card_html = f"""
-                    <div class="flight-card">
-                        <div class="flight-card-details">
-                            <div class="from-to">
-                                <h4><strong>From:</strong> {flight['origin']}</h4>
-                                <h4><strong>To:</strong> {flight['destination']}</h4>
+                    st.markdown(
+                        f"""
+                        <div class="flight-card">
+                            <div class="flight-card-details">
+                                <div class="from-to">
+                                    <h4><strong>From:</strong> {flight['origin']}</h4>
+                                    <h4><strong>To:</strong> {flight['destination']}</h4>
+                                </div>
+                                <p><strong>Flight ID:</strong> {flight['flight_id']}</p>
+                                <p><strong>Price:</strong> ${flight['price']}</p>
+                                <p><strong>Date:</strong> {flight['date']}</p>
+                                <p><strong>Departure:</strong> {flight['departure']}</p>
                             </div>
-                            <p><strong>Flight ID:</strong> {flight['flight_id']}</p>
-                            <p><strong>Price:</strong> ${flight['price']}</p>
-                            <p><strong>Date:</strong> {flight['date']}</p>
-                            <p><strong>Departure:</strong> {flight['departure']}</p>
                         </div>
-                        <form method="get" style="display: inline-block;">
-                            <input type="hidden" name="flight_id" value="{flight['flight_id']}">
-                            <input type="hidden" name="origin" value="{flight['origin']}">
-                            <input type="hidden" name="destination" value="{flight['destination']}">
-                            <input type="hidden" name="price" value="{flight['price']}">
-                            <input type="hidden" name="date" value="{flight['date']}">
-                            <input type="hidden" name="departure" value="{flight['departure']}">
-                            <button type="submit" class="select-button">Select Flight</button>
-                        </form>
-                    </div>
-                    """
-                    st.markdown(card_html, unsafe_allow_html=True)
-                    query_params = st.query_params
-                    flight_id = query_params.get("flight_id")
-                    if flight_id:
-                        selected_flight = next(
-                            (flight for flight in results if flight["flight_id"] == flight_id[0]), None
-                        )
-                        if selected_flight:
-                            st.session_state["selected_flight"] = selected_flight
-                            st.session_state["page"] = "booking"
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                    if st.button(f"Select Flight {flight['flight_id']}", key=f"select_{flight['flight_id']}"):
+                        st.write(f"select_{flight['flight_id']}")
+                        st.session_state["selected_flight"] = index
+                        # navigate_to("booking_page") 
+                        st.switch('booking.py')
         else:
             st.error("No direct flights found.")
     st.title("Explore Popular Destinations")
@@ -137,42 +112,6 @@ def search_flights():
 
             st.subheader(dest["name"])
             st.write(dest["description"])
-def booking_page():
-    st.title("Confirm Your Booking")
-    selected_flight = st.session_state.get("selected_flight")
-    if not selected_flight:
-        st.warning("No flight selected. Please search for and select a flight.")
-        st.session_state["page"] = "search"  
-        st.experimental_rerun()
-        return
-    st.subheader(f"Flight Details - {selected_flight['flight_id']}")
-    st.markdown(f"""
-    **From**: {selected_flight['origin']}  
-    **To**: {selected_flight['destination']}  
-    **Price**: ${selected_flight['price']}  
-    **Date**: {selected_flight['date']}  
-    **Departure**: {selected_flight['departure']}  
-    """)
-    st.subheader("Passenger Details")
-    with st.form("passenger_form"):
-        name = st.text_input("Passenger Name")
-        email = st.text_input("Passenger Email")
-        phone = st.text_input("Passenger Phone Number")
-        confirm = st.form_submit_button("Confirm Booking")
-
-        if confirm:
-            if not name or not email or not phone:
-                st.error("All fields are required to confirm the booking.")
-                return
-            st.session_state["booking_details"] = {
-                "flight": selected_flight,
-                "name": name,
-                "email": email,
-                "phone": phone,
-            }
-            st.success("Booking Confirmed! Navigating to confirmation page...")
-            st.session_state["page"] = "confirmation"
-            st.experimental_rerun()
 def confirmation_page():
     st.title("Booking Confirmation")
     booking_details = st.session_state.get("booking_details")
@@ -182,8 +121,6 @@ def confirmation_page():
         st.session_state["page"] = "search"
         st.experimental_rerun()
         return
-
-    # Display booking confirmation details
     st.subheader("Your Booking Details")
     flight = booking_details["flight"]
     st.markdown(f"""
@@ -199,20 +136,12 @@ def confirmation_page():
     **Email**: {booking_details['email']}  
     **Phone**: {booking_details['phone']}  
     """)
-
-    # Back to search button
     if st.button("Back to Search"):
-        st.session_state["page"] = "search"
-        st.experimental_rerun()
-           
-
-# Function to view reservations
+        navigate_to("confirmation")
 def view_reservations():
     st.title("Your Reservations")
     reservations = [{"Flight ID": "FL001", "Origin": "New York", "Destination": "Los Angeles", "Date": "2023-11-20"}]
     st.table(reservations)
-
-# Dashboard
 def dashboard():
     st.title(f"Welcome, {st.session_state.get('user', 'Guest')}!")
     st.write("This is your dashboard.")
